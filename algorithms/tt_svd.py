@@ -40,40 +40,42 @@ def tt_svd(
     r_left = 1
 
     for k in range(d - 1):
-        unfolding = current.left_unfolding(k)
+        if k == 0:
+            unfolding = current.left_unfolding(0)
+        else:
+            merged_shape = (current.shape[0] * current.shape[1],) + current.shape[2:]
+            merged_tensor = current.reshape(merged_shape)
+            unfolding = merged_tensor.left_unfolding(0)
         
         U, S, Vt = backend.svd(unfolding)
 
         rank = _compute_truncated_rank(S, delta, max_rank)
-
         if rank == 0:
             rank = 1
+        rank = min(rank, S.size)
 
         U_trunc = _truncate_columns(U, rank, backend)
-
-        core_shape = (r_left, tensor.shape[k], rank)
-        core = DenseTensor.zeros(core_shape)
-        for i in range(r_left):
-            for j in range(tensor.shape[k]):
-                for p in range(rank):
-                    core[i, j, p] = U_trunc[i * tensor.shape[k] + j, p]
-
+        
+        if k == 0:
+            n_k = current.shape[0]
+        else:
+            n_k = current.shape[1]
+        
+        core = U_trunc.reshape((r_left, n_k, rank))
         cores.append(core)
 
         S_trunc = _truncate_vector(S, rank, backend)
         Vt_trunc = _truncate_rows(Vt, rank, backend)
-
+        
         current = _multiply_diag_matrix(S_trunc, Vt_trunc, rank, backend)
+        
+        if k < d - 2:
+            new_shape = [rank] + list(tensor.shape[k+1:])
+            current = current.reshape(new_shape)
         
         r_left = rank
 
-    last_shape = (r_left, tensor.shape[d - 1], 1)
-    last_core = DenseTensor.zeros(last_shape)
-    
-    for i in range(r_left):
-        for j in range(tensor.shape[d - 1]):
-            last_core[i, j, 0] = current[i, j]
-
+    last_core = current.reshape((r_left, tensor.shape[d - 1], 1))
     cores.append(last_core)
 
     return TTTensor(cores)
@@ -138,7 +140,7 @@ def _truncate_columns(
         backend: интерфейс backend
     """
     if matrix.ndim != 2:
-        raise ValueError(f"_truncate_columns exp 2D, got {matrix.ndim}D")
+        raise ValueError(f"_truncate_columns expected 2D, got {matrix.ndim}D")
 
     m, n = matrix.shape
     if rank < 0 or rank > n:
@@ -169,7 +171,7 @@ def _truncate_rows(
         backend: интерфейс backend
     """
     if matrix.ndim != 2:
-        raise ValueError(f"_truncate_rows exp 2D, got {matrix.ndim}D")
+        raise ValueError(f"_truncate_rows expected 2D, got {matrix.ndim}D")
 
     k, n = matrix.shape
     if rank < 0 or rank > k:
@@ -200,7 +202,7 @@ def _truncate_vector(
         backend: интерфейс backend
     """
     if vector.ndim != 1:
-        raise ValueError(f"_truncate_vector exp 1D, got {vector.ndim}D")
+        raise ValueError(f"_truncate_vector expected 1D, got {vector.ndim}D")
 
     if rank < 0 or rank > vector.size:
         raise ValueError(f"rank {rank} out of [0, {vector.size}]")
@@ -210,7 +212,6 @@ def _truncate_vector(
 
     result_data = [vector[i] for i in range(rank)]
     return DenseTensor((rank,), data=result_data)
-
 
 def _multiply_diag_matrix(
     diag_vec: DenseTensor,
@@ -229,13 +230,13 @@ def _multiply_diag_matrix(
         backend:  интерфейс backend
     """
     if diag_vec.ndim != 1:
-        raise ValueError(f"_multiply_diag_matrix exp 1D для diag_vec, got {diag_vec.ndim}D")
+        raise ValueError(f"_multiply_diag_matrix expected 1D for diag_vec, got {diag_vec.ndim}D")
     if matrix.ndim != 2:
-        raise ValueError(f"_multiply_diag_matrix exp 2D для matrix, got {matrix.ndim}D")
+        raise ValueError(f"_multiply_diag_matrix expected 2D for matrix, got {matrix.ndim}D")
 
     m, n = matrix.shape
     if m != rank or diag_vec.size != rank:
-        raise ValueError("wrong sizes")
+        raise ValueError("size mismatch")
 
     result_data = []
     for i in range(rank):

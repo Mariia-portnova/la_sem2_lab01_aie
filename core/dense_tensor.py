@@ -128,22 +128,21 @@ class DenseTensor:
         """
         def get_shape(lst):
             shape = [len(lst)]
-            if isinstance(lst[0], list):
+            if lst and isinstance(lst[0], (list, tuple)):
                 shape.extend(get_shape(lst[0]))
             return shape
         
-        def flatten(lst, result):
+        def flatten(lst):
+            result = []
             for item in lst:
-                if isinstance(item, list):
-                    flatten(item, result)
+                if isinstance(item, (list, tuple)):
+                    result.extend(flatten(item))
                 else:
                     result.append(float(item))
             return result
         
         shape = get_shape(nested)
-        data = []
-        flatten(nested, data)
-        
+        data = flatten(nested)
         return DenseTensor(tuple(shape), data=data)
 
     # ────────────────────────────────────────────
@@ -272,30 +271,32 @@ class DenseTensor:
         if k < 0 or k >= self.ndim - 1:
             raise ValueError(f"k {k} out of [0, {self.ndim - 2}]")
 
-        row_dim = compute_size(self.shape[:k+1])
-        col_dim = self.size // row_dim
-
-        result_data = [0.0] * (row_dim * col_dim)
-
+        rows = compute_size(self.shape[:k+1])
+        cols = compute_size(self.shape[k+1:])
+        
+        print(f"  rows={rows}, cols={cols}")
+        
+        result = DenseTensor.zeros((rows, cols))
+        
         for flat_idx in range(self.size):
-            multi_idx = flat_to_multi_index(flat_idx, self.shape)
-
-            row_idx = 0
+            multi = flat_to_multi_index(flat_idx, self.shape)
+            
+            row = 0
             stride = 1
             for i in range(k, -1, -1):
-                row_idx += multi_idx[i] * stride
+                row += multi[i] * stride
                 stride *= self.shape[i]
-
-            col_idx = 0
+            
+            col = 0
             stride = 1
             for i in range(self.ndim - 1, k, -1):
-                col_idx += multi_idx[i] * stride
+                col += multi[i] * stride
                 stride *= self.shape[i]
-
-            new_flat_idx = row_idx * col_dim + col_idx
-            result_data[new_flat_idx] = self.data[flat_idx]
-
-        return DenseTensor((row_dim, col_dim), data=result_data)
+            
+            result[row, col] = self[multi]
+        
+        print(f"result.shape={result.shape}")
+        return result
 
     # ────────────────────────────────────────────
     # Копирование
@@ -399,21 +400,19 @@ class DenseTensor:
 
     def to_nested_list(self) -> list:
         """Возвращает тензор в формате вложенного списка."""
-        def build_nested(shape, flat_data, offset):
-            if len(shape) == 1:
-                return flat_data[offset:offset + shape[0]]
-            
-            dim_size = shape[0]
-            inner_shape = shape[1:]
-            inner_length = compute_size(inner_shape)
-            
-            result = []
-            for i in range(dim_size):
-                inner_offset = offset + i * inner_length
-                result.append(build_nested(inner_shape, flat_data, inner_offset))
-            return result
+        if self.ndim == 1:
+            return self.data.copy()
         
-        return build_nested(self.shape, self.data, 0)
+        result = []
+        inner_size = self.size // self.shape[0]
+        for i in range(self.shape[0]):
+            start = i * inner_size
+            end = start + inner_size
+            inner_data = self.data[start:end]
+            inner_shape = self.shape[1:]
+            inner_tensor = DenseTensor(inner_shape, data=inner_data)
+            result.append(inner_tensor.to_nested_list())
+        return result
 
     def __repr__(self) -> str:
         """
