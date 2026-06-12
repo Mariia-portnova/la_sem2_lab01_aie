@@ -26,15 +26,16 @@ def left_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
         r_left, n_k, r_right = core.shape
 
         if current is not None:
-            new_core = DenseTensor.zeros((current.shape[0] * r_left, n_k, r_right))
+            new_core_data = []
             for i in range(current.shape[0]):
-                for j in range(r_left):
-                    for idx in range(n_k):
-                        for p in range(r_right):
-                            val = current[i, j] * core[j, idx, p]
-                            new_core[i * r_left + j, idx, p] += val
-            core = new_core
-            r_left = core.shape[0]
+                for idx in range(n_k):
+                    for p in range(r_right):
+                        val = 0.0
+                        for j in range(r_left):
+                            val += current[i, j] * core[j, idx, p]
+                        new_core_data.append(val)
+            core = DenseTensor((current.shape[0], n_k, r_right), data=new_core_data)
+            r_left = current.shape[0]
 
         matrix = DenseTensor.zeros((r_left * n_k, r_right))
         for i in range(r_left):
@@ -44,8 +45,7 @@ def left_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
 
         Q, R = backend.qr(matrix)
 
-        new_matrix_shape = (r_left, n_k, Q.shape[1])
-        new_core = DenseTensor.zeros(new_matrix_shape)
+        new_core = DenseTensor.zeros((r_left, n_k, Q.shape[1]))
         for i in range(r_left):
             for j in range(n_k):
                 for p in range(Q.shape[1]):
@@ -56,20 +56,19 @@ def left_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
 
     last_core = tt.cores[-1].copy()
     if current is not None:
-        r_left_last = last_core.shape[0]
-        r_right_last = last_core.shape[2]
-        new_last = DenseTensor.zeros((current.shape[0] * r_left_last, last_core.shape[1], r_right_last))
+        r_left, n_last, r_right = last_core.shape
+        new_last_data = []
         for i in range(current.shape[0]):
-            for j in range(r_left_last):
-                for idx in range(last_core.shape[1]):
-                    for p in range(r_right_last):
-                        val = current[i, j] * last_core[j, idx, p]
-                        new_last[i * r_left_last + j, idx, p] += val
-        last_core = new_last
+            for idx in range(n_last):
+                for p in range(r_right):
+                    val = 0.0
+                    for j in range(r_left):
+                        val += current[i, j] * last_core[j, idx, p]
+                    new_last_data.append(val)
+        last_core = DenseTensor((current.shape[0], n_last, r_right), data=new_last_data)
 
     cores.append(last_core)
     return TTTensor(cores)
-
 
 
 def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
@@ -80,60 +79,55 @@ def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
         tt:      исходный тензор
         backend: интерфейс backend
     """
-    cores = [None] * tt.order
+    d = tt.order
+    cores = [None] * d
     current = None
 
-    for k in range(tt.order - 1, 0, -1):
+    for k in range(d - 1, 0, -1):
         core = tt.cores[k].copy()
-        r_left, n_k, r_right = core.shape
 
         if current is not None:
-            new_core = DenseTensor.zeros((r_left, n_k, r_right * current.shape[0]))
-            for i in range(r_left):
-                for idx in range(n_k):
-                    for j in range(r_right):
-                        for p in range(current.shape[0]):
-                            val = core[i, idx, j] * current[j, p]
-                            new_core[i, idx, j * current.shape[0] + p] = val
-            core = new_core
-            r_right = core.shape[2]
+            new_core_data = []
+            for i in range(core.shape[0]):
+                for idx in range(core.shape[1]):
+                    for p in range(current.shape[1]):
+                        val = 0.0
+                        for j in range(core.shape[2]):
+                            val += core[i, idx, j] * current[j, p]
+                        new_core_data.append(val)
+            core = DenseTensor((core.shape[0], core.shape[1], current.shape[1]), data=new_core_data)
 
-        matrix = DenseTensor.zeros((r_left, n_k * r_right))
-        for i in range(r_left):
-            for j in range(n_k):
-                for p in range(r_right):
-                    matrix[i, j * r_right + p] = core[i, j, p]
-
-        Q, R = backend.qr(backend.transpose(matrix))
-
-        Q = backend.transpose(Q)
-        R = backend.transpose(R)
-
-        new_matrix_shape = (Q.shape[0], n_k, r_right)
-        new_core = DenseTensor.zeros(new_matrix_shape)
-        for i in range(Q.shape[0]):
-            for j in range(n_k):
-                for p in range(r_right):
-                    new_core[i, j, p] = Q[i, j * r_right + p]
-
+        r_left, n_k, r_right = core.shape
+        matrix = core.reshape((r_left, n_k * r_right))
+        
+        if matrix.shape[0] < matrix.shape[1]:
+            matrix_t = backend.transpose(matrix)
+            Q, R = backend.qr(matrix_t)
+            Q = backend.transpose(Q)
+            R = backend.transpose(R)
+        else:
+            Q, R = backend.qr(matrix)
+        
+        
+        new_core = Q.reshape((Q.shape[0], n_k, r_right))
         cores[k] = new_core
-        current = R
+        backend.transpose(R)
 
     first_core = tt.cores[0].copy()
     if current is not None:
-        r_left_first = first_core.shape[0]
-        r_right_first = first_core.shape[2]
-        new_first = DenseTensor.zeros((r_left_first, first_core.shape[1], r_right_first * current.shape[1]))
-        for i in range(r_left_first):
+        new_first_data = []
+        for i in range(first_core.shape[0]):
             for idx in range(first_core.shape[1]):
-                for j in range(r_right_first):
-                    for p in range(current.shape[1]):
-                        val = first_core[i, idx, j] * current[j, p]
-                        new_first[i, idx, j * current.shape[1] + p] = val
-        first_core = new_first
+                for p in range(current.shape[1]):
+                    val = 0.0
+                    for j in range(first_core.shape[2]):
+                        val += first_core[i, idx, j] * current[j, p]
+                    new_first_data.append(val)
+        first_core = DenseTensor((first_core.shape[0], first_core.shape[1], current.shape[1]), data=new_first_data)
 
     cores[0] = first_core
-    return TTTensor(cores)
+    result = TTTensor(cores)
+    return result
 
 
 # ════════════════════════════════════════════════
@@ -327,40 +321,3 @@ def _multiply_columns_by_diag(
             result_data.append(matrix[i, j] * diag_vec[j])
 
     return DenseTensor((m, rank), data=result_data)
-
-if __name__ == "__main__":
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    
-    from core.tt_tensor import TTTensor
-    from core.dense_tensor import DenseTensor
-    from processor_type.cpu_operations import CPUBackend
-    from algorithms.canonical_form import left_canonicalize, right_canonicalize
-    
-    backend = CPUBackend()
-    
-    def test_canonical(shape, ranks):
-        print(f"\n=== Test: shape={shape}, ranks={ranks} ===")
-        tt = TTTensor.random(shape, ranks, seed=42)
-        print(f"Original ranks: {tt.ranks}")
-        
-        try:
-            tt_left = left_canonicalize(tt, backend)
-            print(f"Left canonicalize OK, ranks={tt_left.ranks}")
-        except Exception as e:
-            print(f"Left canonicalize FAIL: {e}")
-        
-        try:
-            tt_right = right_canonicalize(tt, backend)
-            print(f"Right canonicalize OK, ranks={tt_right.ranks}")
-        except Exception as e:
-            print(f"Right canonicalize FAIL: {e}")
-    
-    # Тесты из ошибок TT-ROUND
-    test_canonical((2, 3), [1, 2, 1])
-    test_canonical((3, 2), [1, 2, 1])
-    test_canonical((2, 3, 4), [1, 2, 4, 1])
-    test_canonical((4, 3, 3), [1, 4, 3, 1])
-    test_canonical((2, 2, 6), [1, 2, 4, 1])
-    test_canonical((2, 3, 5, 4), [1, 2, 4, 3, 1])

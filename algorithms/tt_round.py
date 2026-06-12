@@ -28,79 +28,63 @@ def tt_round(
         eps:      относительная точность усечения
     """
     tt_right = right_canonicalize(tt, backend)
-
-    first_core = tt_right.cores[0]
-    norm_first = first_core.norm()
-
-    delta = eps * norm_first / math.sqrt(tt_right.order - 1) if tt_right.order > 1 else 0.0
+    d = tt_right.order
+    
+    norm = tt_right.cores[0].norm()
+    delta = eps * norm / math.sqrt(d - 1) if d > 1 else 0.0
 
     cores = []
-    current = None
+    current = None  
 
-    for k in range(tt_right.order - 1):
+    for k in range(d - 1):
         core = tt_right.cores[k].copy()
-
-        if current is not None:
-            r_left, n_k, r_right = core.shape
-            new_core = DenseTensor.zeros((current.shape[0] * r_left, n_k, r_right))
-            for i in range(current.shape[0]):
-                for j in range(r_left):
-                    for idx in range(n_k):
-                        for p in range(r_right):
-                            val = current[i, j] * core[j, idx, p]
-                            new_core[i * r_left + j, idx, p] += val
-            core = new_core
-
+        
         r_left, n_k, r_right = core.shape
         
-        matrix = DenseTensor.zeros((r_left * n_k, r_right))
-        for i in range(r_left):
-            for j in range(n_k):
-                for p in range(r_right):
-                    matrix[i * n_k + j, p] = core[i, j, p]
+        if current is not None:
+            new_core_data = []
+            for i in range(current.shape[0]):
+                for idx in range(n_k):
+                    for p in range(r_right):
+                        val = 0.0
+                        for j in range(r_left):
+                            val += current[i, j] * core[j, idx, p]
+                        new_core_data.append(val)
+            core = DenseTensor((current.shape[0], n_k, r_right), data=new_core_data)
+            r_left = current.shape[0]
 
-        if matrix.shape[0] < matrix.shape[1]:
-            matrix = matrix.reshape((matrix.shape[1], matrix.shape[0]))
-            matrix = backend.transpose(matrix)
-
+        matrix = core.reshape((r_left * n_k, r_right))
+        
         U, S, Vt = backend.svd(matrix)
-
+        
         rank = _compute_rank(S, delta, max_rank)
-
-        if rank == 0:
+        if rank < 1:
             rank = 1
-
+        
         U_trunc = _truncate_columns(U, rank, backend)
+        S_trunc = _truncate_vector(S, rank, backend)
         Vt_trunc = _truncate_rows(Vt, rank, backend)
-
-        new_core_shape = (r_left, n_k, rank)
-        new_core = DenseTensor.zeros(new_core_shape)
-        for row in range(r_left):
-            for col in range(n_k):
-                for p in range(rank):
-                    new_core[row, col, p] = U_trunc[row * n_k + col, p]
-
+        
+        new_core = U_trunc.reshape((r_left, n_k, rank))
         cores.append(new_core)
-
-        S_vec = _truncate_vector(S, rank, backend)
-        current = _multiply_diag_matrix(S_vec, Vt_trunc, rank, backend)
+        
+        current = _multiply_diag_matrix(S_trunc, Vt_trunc, rank, backend)
 
     last_core = tt_right.cores[-1].copy()
     if current is not None:
         r_left, n_last, r_right = last_core.shape
-        new_last = DenseTensor.zeros((current.shape[0] * r_left, n_last, r_right))
+        new_last_data = []
         for i in range(current.shape[0]):
-            for j in range(r_left):
-                for idx in range(n_last):
-                    for p in range(r_right):
-                        val = current[i, j] * last_core[j, idx, p]
-                        new_last[i * r_left + j, idx, p] += val
-        last_core = new_last
+            for idx in range(n_last):
+                for p in range(r_right):
+                    val = 0.0
+                    for j in range(r_left):
+                        val += current[i, j] * last_core[j, idx, p]
+                    new_last_data.append(val)
+        last_core = DenseTensor((current.shape[0], n_last, r_right), data=new_last_data)
 
     cores.append(last_core)
-
     return TTTensor(cores)
-
 
 # ════════════════════════════════════════════════
 # Вспомогательные функции
@@ -126,6 +110,7 @@ def _compute_rank(
 
     for i in range(k):
         total_squared_sum += S[i] * S[i]
+
 
     rank = k
     for r in range(k):

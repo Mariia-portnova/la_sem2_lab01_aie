@@ -274,8 +274,6 @@ class DenseTensor:
         rows = compute_size(self.shape[:k+1])
         cols = compute_size(self.shape[k+1:])
         
-        print(f"  rows={rows}, cols={cols}")
-        
         result = DenseTensor.zeros((rows, cols))
         
         for flat_idx in range(self.size):
@@ -294,8 +292,7 @@ class DenseTensor:
                 stride *= self.shape[i]
             
             result[row, col] = self[multi]
-        
-        print(f"result.shape={result.shape}")
+            
         return result
 
     # ────────────────────────────────────────────
