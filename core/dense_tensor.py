@@ -126,12 +126,12 @@ class DenseTensor:
         Args:
             nested: список
         """
-        def get_shape(lst, shape):
-            shape.append(len(lst))
+        def get_shape(lst):
+            shape = [len(lst)]
             if isinstance(lst[0], list):
-                get_shape(lst[0], shape)
+                shape.extend(get_shape(lst[0]))
             return shape
-
+        
         def flatten(lst, result):
             for item in lst:
                 if isinstance(item, list):
@@ -139,12 +139,11 @@ class DenseTensor:
                 else:
                     result.append(float(item))
             return result
-
-        shape = []
-        get_shape(nested, shape)
+        
+        shape = get_shape(nested)
         data = []
         flatten(nested, data)
-
+        
         return DenseTensor(tuple(shape), data=data)
 
     # ────────────────────────────────────────────
@@ -400,19 +399,21 @@ class DenseTensor:
 
     def to_nested_list(self) -> list:
         """Возвращает тензор в формате вложенного списка."""
-        def build_nested(shape, data, offset, strides):
+        def build_nested(shape, flat_data, offset):
             if len(shape) == 1:
-                return data[offset:offset + shape[0]]
-            result = []
+                return flat_data[offset:offset + shape[0]]
+            
             dim_size = shape[0]
             inner_shape = shape[1:]
-            inner_stride = strides[1]
+            inner_length = compute_size(inner_shape)
+            
+            result = []
             for i in range(dim_size):
-                inner_offset = offset + i * inner_stride
-                result.append(build_nested(inner_shape, data, inner_offset, strides[1:]))
+                inner_offset = offset + i * inner_length
+                result.append(build_nested(inner_shape, flat_data, inner_offset))
             return result
-
-        return build_nested(self.shape, self.data, 0, self.strides)
+        
+        return build_nested(self.shape, self.data, 0)
 
     def __repr__(self) -> str:
         """

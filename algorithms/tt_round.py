@@ -51,11 +51,17 @@ def tt_round(
                             new_core[i * r_left + j, idx, p] += val
             core = new_core
 
-        matrix = DenseTensor.zeros((core.shape[0], core.shape[1] * core.shape[2]))
-        for i in range(core.shape[0]):
-            for j in range(core.shape[1]):
-                for p in range(core.shape[2]):
-                    matrix[i, j * core.shape[2] + p] = core[i, j, p]
+        r_left, n_k, r_right = core.shape
+        
+        matrix = DenseTensor.zeros((r_left * n_k, r_right))
+        for i in range(r_left):
+            for j in range(n_k):
+                for p in range(r_right):
+                    matrix[i * n_k + j, p] = core[i, j, p]
+
+        if matrix.shape[0] < matrix.shape[1]:
+            matrix = matrix.reshape((matrix.shape[1], matrix.shape[0]))
+            matrix = backend.transpose(matrix)
 
         U, S, Vt = backend.svd(matrix)
 
@@ -67,12 +73,12 @@ def tt_round(
         U_trunc = _truncate_columns(U, rank, backend)
         Vt_trunc = _truncate_rows(Vt, rank, backend)
 
-        new_core_shape = (core.shape[0], core.shape[1], rank)
+        new_core_shape = (r_left, n_k, rank)
         new_core = DenseTensor.zeros(new_core_shape)
-        for row in range(core.shape[0]):
-            for col in range(core.shape[1]):
+        for row in range(r_left):
+            for col in range(n_k):
                 for p in range(rank):
-                    new_core[row, col, p] = U_trunc[row * core.shape[1] + col, p]
+                    new_core[row, col, p] = U_trunc[row * n_k + col, p]
 
         cores.append(new_core)
 

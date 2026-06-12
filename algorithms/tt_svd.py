@@ -65,18 +65,14 @@ def tt_svd(
 
         current = _multiply_diag_matrix(S_trunc, Vt_trunc, rank, backend)
         
-        new_shape = (rank,) + tensor.shape[k+1:]
-        current = current.reshape(new_shape)
-        
         r_left = rank
 
     last_shape = (r_left, tensor.shape[d - 1], 1)
     last_core = DenseTensor.zeros(last_shape)
     
-    if current.ndim == 2:
-        for i in range(r_left):
-            for j in range(tensor.shape[d - 1]):
-                last_core[i, j, 0] = current[i, j]
+    for i in range(r_left):
+        for j in range(tensor.shape[d - 1]):
+            last_core[i, j, 0] = current[i, j]
 
     cores.append(last_core)
 
