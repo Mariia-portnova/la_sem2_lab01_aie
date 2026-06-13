@@ -78,25 +78,26 @@ def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
         r_left, n_k, r_right = core.shape
 
         matrix = core.reshape((r_left, n_k * r_right))
-        Q, R = backend.qr(backend.transpose(matrix))
-        Q = backend.transpose(Q)
-        R = backend.transpose(R)
+        Qt, Rt = backend.qr(backend.transpose(matrix))
+        Q = backend.transpose(Qt)
+        R = backend.transpose(Rt)
 
         new_core = Q.reshape((r_left, n_k, Q.shape[1]))
         cores[k] = new_core
 
         prev_core = cores[k - 1]
         r_prev_left, n_prev, r_prev_right = prev_core.shape
+        
         new_r_right = R.shape[1]
-
         new_data = []
         for i in range(r_prev_left):
             for j in range(n_prev):
                 for p in range(new_r_right):
-                    s = 0.0
-                    for q in range(r_prev_right):
-                        s += prev_core[i, j, q] * R[q, p]
-                    new_data.append(s)
+                    val = 0.0
+                    for q in range(min(r_prev_right, R.shape[0])):
+                        if q < r_prev_right and q < R.shape[0]:
+                            val += prev_core[i, j, q] * R[q, p]
+                    new_data.append(val)
         cores[k - 1] = DenseTensor((r_prev_left, n_prev, new_r_right), data=new_data)
 
     return TTTensor(cores)
