@@ -26,20 +26,20 @@ def tt_round(
         max_rank: максимальный TT-ранг (None = без ограничения)
         eps:      относительная точность усечения
     """
-    from algorithms.canonical_form import left_canonicalize
-    tt_left = left_canonicalize(tt, backend)
-    d = tt_left.order
+    from algorithms.canonical_form import right_canonicalize
+    tt_right = right_canonicalize(tt, backend)
+    d = tt_right.order
     if d == 1:
-        return tt_left
+        return tt_right
 
-    norm = tt_left.cores[-1].norm()
+    norm = tt_right.cores[0].norm()
     delta = eps * norm / math.sqrt(d - 1) if d > 1 else 0.0
 
     cores = []
     current = None
 
     for k in range(d - 1):
-        core = tt_left.cores[k].copy()
+        core = tt_right.cores[k].copy()
         r_left, n_k, r_right = core.shape
 
         if current is not None:
@@ -70,7 +70,7 @@ def tt_round(
 
         current = _multiply_diag_matrix(S_trunc, Vt_trunc, rank, backend)
 
-    last_core = tt_left.cores[-1].copy()
+    last_core = tt_right.cores[-1].copy()
     if current is not None:
         r_left, n_last, r_right = last_core.shape
         new_last_data = []
