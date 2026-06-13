@@ -29,18 +29,19 @@ def tt_round(
     from algorithms.canonical_form import left_canonicalize
     tt_left = left_canonicalize(tt, backend)
     d = tt_left.order
-    
+    if d == 1:
+        return tt_left
+
     norm = tt_left.cores[-1].norm()
     delta = eps * norm / math.sqrt(d - 1) if d > 1 else 0.0
 
     cores = []
-    current = None  
+    current = None
 
     for k in range(d - 1):
         core = tt_left.cores[k].copy()
-        
         r_left, n_k, r_right = core.shape
-        
+
         if current is not None:
             new_core_data = []
             for i in range(current.shape[0]):
@@ -54,20 +55,19 @@ def tt_round(
             r_left = current.shape[0]
 
         matrix = core.reshape((r_left * n_k, r_right))
-        
         U, S, Vt = backend.svd(matrix)
-        
+
         rank = _compute_rank(S, delta, max_rank)
         if rank < 1:
             rank = 1
-        
+
         U_trunc = _truncate_columns(U, rank, backend)
         S_trunc = _truncate_vector(S, rank, backend)
         Vt_trunc = _truncate_rows(Vt, rank, backend)
-        
+
         new_core = U_trunc.reshape((r_left, n_k, rank))
         cores.append(new_core)
-        
+
         current = _multiply_diag_matrix(S_trunc, Vt_trunc, rank, backend)
 
     last_core = tt_left.cores[-1].copy()

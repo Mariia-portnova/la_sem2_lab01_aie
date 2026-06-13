@@ -90,6 +90,7 @@ def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
 
     for k in range(d - 1, 0, -1):
         core = tt.cores[k].copy()
+
         if current is not None:
             new_core_data = []
             for i in range(core.shape[0]):
@@ -104,16 +105,13 @@ def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
         r_left, n_k, r_right = core.shape
         matrix = core.reshape((r_left, n_k * r_right))
         
-        U, S, Vt = backend.svd(matrix)
+        matrix_t = backend.transpose(matrix)
+        Q_t, R_t = backend.qr(matrix_t)
         
-        rank = min(r_left, n_k * r_right)
+        Q = backend.transpose(Q_t)
+        R = backend.transpose(R_t)
         
-        Q = Vt
-        R = DenseTensor.zeros((U.shape[0], rank))
-        for i in range(U.shape[0]):
-            for j in range(rank):
-                R[i, j] = U[i, j] * S[j]
-        
+        rank = Q.shape[0]
         new_core = Q.reshape((rank, n_k, r_right))
         cores[k] = new_core
         current = R
@@ -129,11 +127,13 @@ def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
                         val += first_core[i, idx, j] * current[j, p]
                     new_first_data.append(val)
         first_core = DenseTensor((first_core.shape[0], first_core.shape[1], current.shape[1]), data=new_first_data)
-    cores[0] = first_core
 
+    cores[0] = first_core
+    
     for i in range(d):
         if cores[i] is None:
             cores[i] = tt.cores[i].copy()
+            
     return TTTensor(cores)
 
 # ════════════════════════════════════════════════
