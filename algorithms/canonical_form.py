@@ -38,9 +38,8 @@ def left_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
             core = DenseTensor((current.shape[0], n_k, r_right), data=new_data)
             r_left = current.shape[0]
 
-        matrix = core.reshape((r_left * n_k, r_right))
-        Q, R = backend.qr(matrix)
-
+        M = core.reshape((r_left * n_k, r_right))
+        Q, R = backend.qr(M)
         new_core = Q.reshape((r_left, n_k, Q.shape[1]))
         cores.append(new_core)
         current = R
@@ -77,10 +76,11 @@ def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
         core = cores[k]
         r_left, n_k, r_right = core.shape
 
-        matrix = core.reshape((r_left, n_k * r_right))
-        Qt, Rt = backend.qr(backend.transpose(matrix))
-        Q = backend.transpose(Qt)
-        R = backend.transpose(Rt)
+        M = core.reshape((r_left, n_k * r_right))
+        Mt = backend.transpose(M)
+        Q, R = backend.qr(Mt)
+        Q = backend.transpose(Q)
+        R = backend.transpose(R)
 
         new_core = Q.reshape((r_left, n_k, Q.shape[1]))
         cores[k] = new_core
@@ -88,17 +88,15 @@ def right_canonicalize(tt: TTTensor, backend: BackendInterface) -> TTTensor:
         prev_core = cores[k - 1]
         r_prev_left, n_prev, r_prev_right = prev_core.shape
         
-        new_r_right = R.shape[1]
-        new_data = []
+        new_prev_data = []
         for i in range(r_prev_left):
             for j in range(n_prev):
-                for p in range(new_r_right):
+                for p in range(R.shape[1]):
                     val = 0.0
-                    for q in range(min(r_prev_right, R.shape[0])):
-                        if q < r_prev_right and q < R.shape[0]:
-                            val += prev_core[i, j, q] * R[q, p]
-                    new_data.append(val)
-        cores[k - 1] = DenseTensor((r_prev_left, n_prev, new_r_right), data=new_data)
+                    for q in range(r_prev_right):
+                        val += prev_core[i, j, q] * R[q, p]
+                    new_prev_data.append(val)
+        cores[k - 1] = DenseTensor((r_prev_left, n_prev, R.shape[1]), data=new_prev_data)
 
     return TTTensor(cores)
 
